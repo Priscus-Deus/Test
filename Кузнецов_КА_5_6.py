@@ -4,8 +4,21 @@ from openpyxl import Workbook, load_workbook
 import pandas as pd
 import numpy as np
 from datetime import datetime
+from openpyxl.styles import Font, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+from openpyxl.utils.dataframe import dataframe_to_rows
+
+
+
 
 file_path = 'Выгрузка для ЛАБ5-6.xlsx'
+header_font = Font(bold=True, italic=True)
+data_font = Font(bold=False)
+center_aligned_text = Alignment(horizontal='center', vertical='center')
+thin_border = Border(left=Side(style='thin'), 
+                        right=Side(style='thin'), 
+                        top=Side(style='thin'), 
+                        bottom=Side(style='thin'))
 
 
 
@@ -41,6 +54,8 @@ def task2():
     full_df = pd.DataFrame({'updated': full_date_range})
     df = full_df.merge(df, on='updated', how='left')
     df = df.sort_values(by='updated', ascending=False)
+
+    
     df.to_excel('Выгрузка для ЛАБ5-6.xlsx', index=False)
 
 
@@ -236,6 +251,8 @@ def task5():
     chart_open.add_data(values)
     chart_open.set_categories(categories)
 
+    chart_open.width = 40
+
     ws.add_chart(chart_open, "Y2")
     
     
@@ -271,7 +288,8 @@ def task5():
     categories = Reference(ws, min_col=22, min_row=2, max_row=len(update_close_gisto))
     chart_close.add_data(values)
     chart_close.set_categories(categories)
-
+    chart_close.width = 40
+    chart_close.height = 10
     ws.add_chart(chart_close, "Y20")
 
     wb.save(file_path)
@@ -302,6 +320,153 @@ def task4():
     wb.save(file_path)
 
 
+def task6():
+        # Попробуем другой формат для даты, исключая день недели
+    data = pd.read_excel(file_path, sheet_name='Sheet1')
+    data['Date'] = pd.to_datetime(data['updated'].str.split(' ').str[-1].str.rstrip('г.'), format='%m.%d.%Y')
+    data['Year'] = data['Date'].dt.year
+
+    # Проверим результаты преобразования снова
+    #print(data[['updated', 'Date', 'Year']].head())
+
+        # Разделим объемы торгов на децили
+    data['Decile'] = pd.qcut(data['volume'], 10, labels=False)  # Нумерация децилей от 0 до 9
+
+    # Отберем максимальные и минимальные значения для первого и десятого дециля
+    min_decile_1 = data[data['Decile'] == 0]['volume'].min()
+    max_decile_1 = data[data['Decile'] == 0]['volume'].max()
+    min_decile_10 = data[data['Decile'] == 9]['volume'].min()
+    max_decile_10 = data[data['Decile'] == 9]['volume'].max()
+
+
+        # Находим годы для максимальных и минимальных значений в первом и десятом дециле
+    years_min_decile_1 = data[(data['volume'] == min_decile_1) & (data['Decile'] == 0)]['Year'].unique()
+    years_max_decile_1 = data[(data['volume'] == max_decile_1) & (data['Decile'] == 0)]['Year'].unique()
+    years_min_decile_10 = data[(data['volume'] == min_decile_10) & (data['Decile'] == 9)]['Year'].unique()
+    years_max_decile_10 = data[(data['volume'] == max_decile_10) & (data['Decile'] == 9)]['Year'].unique()
+
+
+        # Создаем DataFrame для результатов
+    results_df = pd.DataFrame({
+        "Decile": ["1st Decile Min", "1st Decile Max", "10th Decile Min", "10th Decile Max"],
+        "Volume": [min_decile_1, max_decile_1, min_decile_10, max_decile_10],
+        "Years": [", ".join(years_min_decile_1.astype(str)), ", ".join(years_max_decile_1.astype(str)), 
+                ", ".join(years_min_decile_10.astype(str)), ", ".join(years_max_decile_10.astype(str))]
+    })
+
+    book = load_workbook(file_path)
+
+    # Создание нового листа в книге
+    sheet_name = 'Decile Analysis'
+    if sheet_name in book.sheetnames:
+        del book[sheet_name]  # Удалить лист, если он уже существует
+    ws = book.create_sheet(sheet_name)
+
+    # Закрепление шапки таблицы
+    ws.freeze_panes = 'A2'
+
+    # Стилизация для заголовков и данных
+    
+    # Добавление заголовков с форматированием
+    headers = results_df.columns
+    for col, header in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.alignment = center_aligned_text
+        cell.border = thin_border
+
+    # Добавление данных с форматированием
+    for r, row in enumerate(results_df.itertuples(index=False), start=2):
+        for c, value in enumerate(row, start=1):
+            cell = ws.cell(row=r, column=c, value=value)
+            cell.font = data_font
+            cell.alignment = center_aligned_text
+            cell.border = thin_border
+
+    # Применение жирной рамки для контура таблицы
+    for row in ws['A1':f'{get_column_letter(ws.max_column)}{ws.max_row}']:
+        for cell in row:
+            cell.border = Border(left=Side(style='medium'), 
+                                right=Side(style='medium'), 
+                                top=Side(style='medium'), 
+                                bottom=Side(style='medium'))
+
+    # Сохранение изменений в файл
+    book.save(file_path)
+
+
+
+def task7():
+    
+    data = pd.read_excel(file_path, sheet_name='Sheet1')
+
+    
+    data['Date'] = pd.to_datetime(data['updated'].str.split(' ').str[-1].str.rstrip('г.'), format='%m.%d.%Y')
+    data['Год'] = data['Date'].dt.year
+    data['Месяц'] = data['Date'].dt.month
+
+    
+    data['avg_больше_close'] = data['average'] > data['close']
+    data['avg_меньше_close'] = data['average'] < data['close']
+    data['close_меньше_open'] = data['close'] < data['open']
+    data['close_больше_open'] = data['close'] > data['open']
+
+    
+    monthly_average = data.groupby(['Год', 'Месяц'])['volume'].transform('mean')
+    data['volume_up_50_percent'] = data['volume'] > 1.5 * monthly_average
+
+
+    pivot_table1 = data.groupby('Год').agg({
+        'avg_больше_close': 'sum',
+        'avg_меньше_close': 'sum',
+        'close_меньше_open': 'sum',
+        'close_больше_open': 'sum'
+    })
+
+    
+    pivot_table2 = data[data['volume_up_50_percent']].groupby(['Год', 'Месяц', 'U/R']).size().unstack(fill_value=0)
+
+    pivot_table2.to_excel('f2.xlsx')
+    pivot_table1.to_excel('f1.xlsx')
+
+    df1 = pd.read_excel('f1.xlsx')
+    df2 = pd.read_excel('f2.xlsx')
+    with pd.ExcelWriter(file_path, engine='openpyxl', mode='a') as writer:
+        df1.to_excel(writer, sheet_name='task7_1', index=False)
+        df2.to_excel(writer, sheet_name='task7_2', index=False)
+
+
+def task9():
+    wb = load_workbook(file_path)
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        ws.freeze_panes = 'A2'
+        for row in ws.iter_rows(min_row=1, max_col=ws.max_column, max_row=ws.max_row):
+            for cell in row:
+                cell.border = thin_border
+                cell.alignment = center_aligned_text
+                if cell.row == 1:  
+                    cell.font = header_font
+                else:  
+                    cell.font = data_font
+
+    wb.save(file_path)
+
+
+def task8():
+
+    data = pd.read_excel(file_path, sheet_name='Sheet1')
+    data['updated'] = pd.to_datetime(data['updated'], errors='coerce')
+    data['Month'] = data['updated'].dt.to_period('M')
+
+    monthly_averages = data.groupby('Month').mean().round(2)
+    monthly_averages['U/R'] = monthly_averages['U/R'].round(0)
+    monthly_averages['updated'] = monthly_averages['updated'].astype(str).str.slice(0,7)
+    monthly_averages['updated'] = pd.to_datetime(monthly_averages['updated'])
+    monthly_averages['updated'] = monthly_averages['updated'].dt.strftime('%B %Y')
+
+    with pd.ExcelWriter(file_path, engine='openpyxl', mode='a') as writer:
+        monthly_averages.to_excel(writer, sheet_name='task8', index=False)
 
 
 
@@ -309,5 +474,8 @@ convert2xlsx()
 task2()
 task3()
 task5()
+task8()
 task4()
-
+task6()
+task7()
+task9()
